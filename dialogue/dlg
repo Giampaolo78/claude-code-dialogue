@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# dlg - launcher of the dialogue system (distributable asset, multi-project).
+#
+# Three things:
+#  - resolves symlinks PORTABLY (no 'readlink -f' on macOS/BSD): works even when
+#    invoked via ~/.local/bin/dlg from ANY cwd.
+#  - "dlg attach [dir]" attaches the dialogue to the project (.dialogue/ + commands), then exits.
+#  - for any other command: walks up from the cwd to find the project's .dialogue/ and scopes
+#    registry+boards THERE (per-project isolation via DIALOGUE_TEAM_ROOT/DIALOGUE_BOARDS_ROOT,
+#    overrides already supported by the engine -- no change to the engine code).
+set -euo pipefail
+
+START_PWD="$PWD"
+
+# --- real location of this script (symlink-safe, DLG-002) ---
+SRC="${BASH_SOURCE[0]}"
+while [ -L "$SRC" ]; do
+  DIR="$(cd -P "$(dirname "$SRC")" && pwd)"
+  SRC="$(readlink "$SRC")"
+  case "$SRC" in /*) ;; *) SRC="$DIR/$SRC" ;; esac
+done
+DIALOGUE_DIR="$(cd -P "$(dirname "$SRC")" && pwd)"   # .../<engine>/dialogue
+ENGINE_DIR="$(dirname "$DIALOGUE_DIR")"               # .../<engine> (has .venv, templates/, attach.sh)
+
+# --- special subcommands: attach/detach (shell, no python) ---
+if [ "${1:-}" = "attach" ]; then
+  exec "$ENGINE_DIR/attach.sh" "${2:-$START_PWD}"
+fi
+if [ "${1:-}" = "detach" ]; then
+  exec "$ENGINE_DIR/detach.sh" "${2:-$START_PWD}"
+fi
+
+# --- per-project scope: walk up from the cwd to find .dialogue/ (like git with .git) ---
+D="$START_PWD"; FOUND=""
+while [ "$D" != "/" ] && [ -n "$D" ]; do
+  if [ -d "$D/.dialogue" ]; then
+    export DIALOGUE_TEAM_ROOT="$D/.dialogue/team"
+    export DIALOGUE_BOARDS_ROOT="$D/.dialogue/boards"
+    FOUND=1
+    break
+  fi
+  D="$(dirname "$D")"
+done
+# not attached and no explicit override: WARN (the engine would silently use the engine's shared
+# store -> messages in the wrong place). The warning is on stderr, does NOT block.
+if [ -z "$FOUND" ] && [ -z "${DIALOGUE_BOARDS_ROOT:-}" ]; then
+  echo "dlg: WARNING - you are not in an attached project (no .dialogue/ here or above)." >&2
+  echo "     For a project-isolated dialogue, run first:  dlg attach" >&2
+fi
+
+cd "$ENGINE_DIR"
+exec "$ENGINE_DIR/.venv/bin/python" -m dialogue "$@"

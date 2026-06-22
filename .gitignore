@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+dialogue/boards/
+dialogue/team/registry*.json
+dialogue/team/registry_journal.jsonl
+dialogue/team/.registry.lock
+.DS_Store
