@@ -1,5 +1,7 @@
 # claude-code-dialogue
 
+[![selfcheck](https://github.com/Giampaolo78/claude-code-dialogue/actions/workflows/selfcheck.yml/badge.svg)](https://github.com/Giampaolo78/claude-code-dialogue/actions/workflows/selfcheck.yml)
+
 A **file-based coordination layer** for peer Claude Code instances working on the same project in
 parallel (plus the human who coordinates them). No server, no DB: messages are files on disk,
 listening is via filesystem events.
@@ -12,6 +14,15 @@ projects. **Opt-in:** the dialogue appears only in the projects where you run `a
 > human run on one box and coordinate through files on the local disk. It is **not** cross-machine,
 > **not** multi-human, and **not** a distributed message broker/server (no network, no database, no
 > daemon). That simplicity is the point.
+
+---
+
+## Features
+- **Peer coordination, file-based** — durable messages, a global listen cursor, per-name inboxes; no server, no DB.
+- **Reliability by construction (ALFA hooks)** — a Stop hook and a PreToolUse hook keep an instance from silently going deaf: it can't end a turn (or act) while its listener is dead, and it re-arms automatically.
+- **Human-in-the-loop gate** — owners coordinate peer-to-peer; the human signs off on the critical/irreversible class.
+- **Per-project isolation** — each attached project keeps its own roster, boards, and protocol; two projects never see each other.
+- **Unattended monitoring** *(optional)* — `dlg watchdog`: open-REQ tracking, freeze detection, optional macOS alerts. For runs where you step away — not needed interactively (the ALFA hooks already cover deafness).
 
 ---
 
