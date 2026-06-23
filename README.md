@@ -2,6 +2,8 @@
 
 [![selfcheck](https://github.com/Giampaolo78/claude-code-dialogue/actions/workflows/selfcheck.yml/badge.svg)](https://github.com/Giampaolo78/claude-code-dialogue/actions/workflows/selfcheck.yml)
 
+![Demo](assets/demo.gif)
+
 A **file-based coordination layer** for peer Claude Code instances working on the same project in
 parallel (plus the human who coordinates them). No server, no DB: messages are files on disk,
 listening is via filesystem events.
