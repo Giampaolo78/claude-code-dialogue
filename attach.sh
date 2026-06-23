@@ -8,8 +8,18 @@ set -euo pipefail
 
 PROJ="${1:-$PWD}"
 PROJ="$(cd "$PROJ" && pwd)"          # absolute
-NAME="$(basename "$PROJ")"
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # the engine home (where this script lives)
+# Project name as ONE shell-safe token via the ENGINE's slug -- single source of truth. attach must
+# NOT re-implement slug() in bash (the copy would drift from dialogue/boards.py). Without slugging, a
+# folder name with spaces/shell-meta ("freelancer and fractional") bakes into the per-project commands
+# and breaks positional parsing. The empty-name fallback ("project") is attach's own explicit rule.
+NAME="$("$SELF/dialogue/dlg" slug "$(basename "$PROJ")" 2>/dev/null)"; rc=$?
+# guard the engine call: distinguish a CRASH (rc != 0 -> abort LOUDLY; never silently slug every
+# project to "" -> "project" and collide their convs) from a legitimately-empty slug (rc 0, e.g.
+# "!!!" -> the explicit "project" fallback). The 2>/dev/null only hides the launcher's spurious
+# "not in an attached project" warning, NOT real failures -- those surface via rc.
+[ "$rc" -ne 0 ] && { echo "[attach] ERROR: 'dlg slug' failed (rc=$rc) -- engine broken (venv/import)? Aborting instead of mis-naming the project." >&2; exit 1; }
+[ -z "$NAME" ] && NAME="project"
 TPL="$SELF/templates/commands"
 
 [ -d "$TPL" ] || { echo "[attach] ERROR: templates not found in $TPL"; exit 1; }

@@ -318,6 +318,26 @@ def cmd_is_listening(args) -> int:
     return 0 if watch.has_live_listener(args.name) else 1
 
 
+def cmd_is_registered(args) -> int:
+    """0.7.1: exit 0 if NAME is already in this project's registry, else exit 1. Uses the engine's
+    walk-up registry resolution (identity.load_registry -> boards_root) -- the onboard skill calls
+    THIS instead of grepping a guessed relative path, which was the root of the resume-misfire bug
+    (the guess `team/registry.json` missed from any cwd that was not the project root)."""
+    target = boards.slug(args.name)
+    try:
+        members = identity.load_registry().get("members", [])
+    except (OSError, ValueError):
+        return 1
+    return 0 if any(boards.slug(m.get("name", "")) == target for m in members) else 1
+
+
+def cmd_slug(args) -> int:
+    """0.7.1: print the engine's canonical slug for NAME. Single source of truth for normalization --
+    attach calls this instead of re-implementing slug() in bash, so the two can never drift."""
+    print(boards.slug(args.name))
+    return 0
+
+
 def cmd_session_name(args) -> int:
     """0.6: resolve a Claude session_id -> the dialogue name bound to it (written by `dlg listen`).
     Goes through the SAME boards_root() (with the wrapper's walk-up to .dialogue) used by the
@@ -454,6 +474,14 @@ def build_parser() -> argparse.ArgumentParser:
     il = sub.add_parser("is-listening", help="exit 0 if NAME has a live listener, else exit 1 (ALFA hook probe)")
     il.add_argument("name")
     il.set_defaults(func=cmd_is_listening)
+
+    ir = sub.add_parser("is-registered", help="exit 0 if NAME is in this project's registry, else 1")
+    ir.add_argument("name")
+    ir.set_defaults(func=cmd_is_registered)
+
+    sl = sub.add_parser("slug", help="print the canonical slug for NAME (single-source for attach)")
+    sl.add_argument("name")
+    sl.set_defaults(func=cmd_slug)
 
     sn = sub.add_parser("session-name", help="resolve a session_id to its bound dialogue name (ALFA hook)")
     sn.add_argument("session_id")

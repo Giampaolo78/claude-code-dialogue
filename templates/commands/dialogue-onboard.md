@@ -12,7 +12,7 @@ ARGS="$ARGUMENTS"
 NAME="${ARGS%% *}"
 DOMAIN="${ARGS#"$NAME"}"; DOMAIN="${DOMAIN# }"
 [ -z "$NAME" ] && { echo "ERROR: pass at least the name. E.g.: /dialogue-onboard claude-frontend"; exit 1; }
-if grep -q "\"name\": \"$NAME\"" team/registry.json 2>/dev/null; then
+if dlg is-registered "$NAME"; then
   echo "RESUME: '$NAME' is already in the registry -> no re-registration, onboarding only."
 else
   [ -z "$DOMAIN" ] && { echo "NEW member '$NAME' but domain missing. Re-run: /dialogue-onboard $NAME <domain>"; exit 1; }

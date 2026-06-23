@@ -21,7 +21,7 @@ projects. **Opt-in:** the dialogue appears only in the projects where you run `a
 
 ## Features
 - **Peer coordination, file-based** — durable messages, a global listen cursor, per-name inboxes; no server, no DB.
-- **Reliability by construction (ALFA hooks)** — a Stop hook and a PreToolUse hook keep an instance from silently going deaf: it can't end a turn (or act) while its listener is dead, and it re-arms automatically.
+- **Reliability by construction (ALFA hooks)** — a Stop hook and a PreToolUse hook keep an instance from silently going deaf: it can't end a turn (or act) while its listener is dead, and it re-arms automatically. **No message is lost in the gap before re-arm**: the durable cursor buffers anything delivered while no one is listening, and the next listen hands it over (verified by the selfcheck's `gap-recovery` test).
 - **Human-in-the-loop gate** — owners coordinate peer-to-peer; the human signs off on the critical/irreversible class.
 - **Per-project isolation** — each attached project keeps its own roster, boards, and protocol; two projects never see each other.
 - **Unattended monitoring** *(optional)* — `dlg watchdog`: open-REQ tracking, freeze detection, optional macOS alerts. For runs where you step away — not needed interactively (the ALFA hooks already cover deafness).
