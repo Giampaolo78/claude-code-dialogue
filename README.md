@@ -128,21 +128,30 @@ inside a project, finds its own `.dialogue/` by itself (walking up from the cwd)
 
 ## Upgrade the engine
 ```bash
+dlg upgrade          # pull the engine + refresh EVERY attached project's commands, in one shot
+```
+Or just pull — the per-project command copies **auto-refresh after a `git pull`**: `install.sh`
+installs a `post-merge` git hook that re-attaches every registered project.
+```bash
 git -C ~/.claude-code-dialogue pull
 ```
 If `~/.claude-code-dialogue` is a **symlink** to your clone (the default when you cloned elsewhere),
-this resolves through the link and pulls your clone — equivalently, pull the clone directly, CLI or
-in your GUI git client. The pull updates the **engine code and the ALFA hooks** for **all** attached
-projects at once (they are referenced by absolute path, so they pick it up automatically). The
-per-project data (`.dialogue/`) is not touched. One thing does **not** auto-update: the per-project
-`/dialogue-*` command **copies** — to refresh those in a project, run `dlg attach` again there.
+this resolves through the link and pulls your clone — CLI or GUI git client. The pull updates the
+**engine code + the ALFA hooks** (referenced by absolute path, auto-applied) and, via the post-merge
+hook, **regenerates the per-project `/dialogue-*` command copies** for all attached projects. The
+per-project data (`.dialogue/`: roster, messages, cursors) is **not** touched.
+
+> A git client that does **not** run git hooks won't auto-refresh the command copies (rare — GitHub
+> Desktop does run them). Then run **`dlg upgrade`** (or `dlg attach` in the project) to refresh them
+> explicitly. `dlg upgrade` is the robust path that always works, hooks or not.
 
 ---
 
 ## What's in the repo
 - `dialogue/` — the engine (Python stdlib + `watchdog`) and the `dlg` launcher.
-- `install.sh` — engine setup (idempotent) + attach of the current project.
+- `install.sh` — engine setup (idempotent) + attach of the current project + the post-merge auto-refresh hook.
 - `attach.sh` / `detach.sh` — attach/detach the dialogue to/from a project.
+- `upgrade.sh` — `dlg upgrade`: pull the engine + re-attach every registered project (refresh commands).
 - `templates/commands/` — the 11 generic slash-commands (copied into the project's `.claude/commands/`).
 - `templates/COORDINATION.template.md` — the coordination protocol (generic, with `[PER-PROJECT]` stubs).
 - `requirements.txt` — the only external dependency: `watchdog`.

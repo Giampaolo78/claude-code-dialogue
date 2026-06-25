@@ -20,6 +20,13 @@ if [ -d "$TPL" ]; then
   done
 fi
 
+# de-register from the upgrade registry so `dlg upgrade` / the post-merge hook no longer refresh it.
+REGISTRY="${DIALOGUE_REGISTRY:-$SELF/.attached_projects}"
+if [ -f "$REGISTRY" ]; then
+  rt="$REGISTRY.$$.tmp"
+  grep -vxF "$PROJ" "$REGISTRY" > "$rt" 2>/dev/null && mv -f "$rt" "$REGISTRY" 2>/dev/null || rm -f "$rt" 2>/dev/null
+fi
+
 echo "[detach] removed $n slash-commands from $PROJ/.claude/commands/"
 if [ -d "$PROJ/.dialogue" ]; then
   echo "  The DATA stays in $PROJ/.dialogue/ (roster, messages, COORDINATION) -- detach is reversible."

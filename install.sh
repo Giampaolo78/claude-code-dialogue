@@ -72,5 +72,24 @@ ln -sf "$ENGINE_HOME/dialogue/dlg" "$HOME/.local/bin/dlg"
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "[install] NB: add ~/.local/bin to your PATH";; esac
 echo "[install] engine ready: dlg -> ~/.local/bin/dlg"
 
+# --- 1b) post-merge git hook: auto-refresh every attached project after a `git pull` of the engine.
+# A pull updates the engine + the ALFA hooks (absolute-path referenced, auto-applied) but NOT the
+# per-project /dialogue-* command copies -> without this they stay stale until a manual re-attach.
+# Best-effort: clients that honor git hooks (CLI, GitHub Desktop) get it automatically; for the rest
+# `dlg upgrade` is the explicit robust path. The hook must never fail the pull (it always exits 0).
+gitdir="$(git -C "$ENGINE_HOME" rev-parse --absolute-git-dir 2>/dev/null || true)"
+if [ -n "$gitdir" ]; then
+  hook="$gitdir/hooks/post-merge"
+  cat > "$hook" <<'HOOKEOF'
+#!/usr/bin/env bash
+# dialogue: after a pull of the engine, refresh every attached project's command copies.
+eng="$HOME/.claude-code-dialogue"
+[ -x "$eng/upgrade.sh" ] && "$eng/upgrade.sh" --no-pull >/dev/null 2>&1
+exit 0
+HOOKEOF
+  chmod +x "$hook" 2>/dev/null || true
+  echo "[install] post-merge hook installed -> attached projects auto-refresh on 'git pull'"
+fi
+
 # --- 2) ATTACH the current project (always) ---
 "$ENGINE_HOME/attach.sh" "$TARGET_PROJECT"

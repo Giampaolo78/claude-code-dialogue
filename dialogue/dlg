@@ -29,6 +29,9 @@ fi
 if [ "${1:-}" = "detach" ]; then
   exec "$ENGINE_DIR/detach.sh" "${2:-$START_PWD}"
 fi
+if [ "${1:-}" = "upgrade" ]; then
+  exec "$ENGINE_DIR/upgrade.sh" "${2:-}"
+fi
 
 # --- per-project scope: walk up from the cwd to find .dialogue/ (like git with .git) ---
 D="$START_PWD"; FOUND=""

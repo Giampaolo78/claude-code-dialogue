@@ -41,7 +41,12 @@ mkdir -p "$PROJ/.claude/commands"
 SELF_ESC="$(printf '%s' "$SELF" | sed 's/[&#\\]/\\&/g')"
 n=0
 for f in "$TPL"/*.md; do
-  sed -e "s#<project>#$NAME#g" -e "s#<dlg>#$SELF_ESC/dialogue/dlg#g" "$f" > "$PROJ/.claude/commands/$(basename "$f")"
+  # atomic write (tmp + mv): never expose a half-written command file to a Claude reading it
+  # concurrently (e.g. an auto re-attach via the post-merge hook while another session is live).
+  dst="$PROJ/.claude/commands/$(basename "$f")"
+  tmp="$dst.$$.tmp"   # UNIQUE per process: two concurrent re-attaches (e.g. simultaneous pulls)
+                      # must not share one tmp and tear each other's write before the atomic mv.
+  sed -e "s#<project>#$NAME#g" -e "s#<dlg>#$SELF_ESC/dialogue/dlg#g" "$f" > "$tmp" && mv -f "$tmp" "$dst"
   n=$((n+1))
 done
 
@@ -95,7 +100,7 @@ else:
     print("[attach] WARNING: settings.json hooks.PreToolUse is not a list; PreToolUse hook not installed")
 
 if changed:
-    tmp = settings_path + ".tmp"
+    tmp = settings_path + f".{os.getpid()}.tmp"   # unique per process (concurrent re-attaches)
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     os.replace(tmp, settings_path)
@@ -104,6 +109,11 @@ else:
     print("[attach] ALFA hooks already present")
 PYEOF
 fi
+
+# register this project so `dlg upgrade` / the post-merge hook can refresh its commands after a
+# `git pull` (dedup; PROJ is absolute). The registry is engine-local user state (gitignored).
+REGISTRY="${DIALOGUE_REGISTRY:-$SELF/.attached_projects}"
+grep -qxF "$PROJ" "$REGISTRY" 2>/dev/null || printf '%s\n' "$PROJ" >> "$REGISTRY"
 
 echo "[attach] '$NAME' attached:"
 echo "  - .dialogue/team (this project's isolated registry)"
