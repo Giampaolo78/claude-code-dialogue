@@ -3,7 +3,7 @@ Arm the `<project>` watchdog: a background guardian for when you run instances a
 ## What to do (immediately)
 1. Launch in BACKGROUND (run_in_background = true), from inside the project:
    ```
-   dlg watchdog
+   <dlg> watchdog
    ```
    Optional: `--interval <sec>` (scan period) and `--threshold <sec>` (how long a request may stay open before a reminder). Defaults: 60s / 600s.
 2. **Single-process by construction:** if a watchdog is already armed for this project, the command prints `[WATCHDOG] already running (pid X)` and does NOT start a second one — that's fine, nothing to do. Otherwise it prints `[WATCHDOG v2] active: ...`.

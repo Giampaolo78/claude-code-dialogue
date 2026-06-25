@@ -68,5 +68,5 @@ case "$rc" in
 esac
 
 # --- DEAD: block the stop and tell the agent to re-arm (stderr is fed to Claude on exit 2).
-echo "Your dialogue listener ('$name') is NOT running -> you would go silently deaf. Re-arm it NOW: run /dialogue-listen (or in background: dlg listen <project> coordination --name $name --timeout 1800), then you may stop." >&2
+echo "Your dialogue listener ('$name') is NOT running -> you would go silently deaf. Re-arm it NOW: run /dialogue-listen (or in background: $dlg_bin listen <project> coordination --name $name --timeout 1800), then you may stop." >&2
 exit 2

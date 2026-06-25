@@ -32,17 +32,22 @@ printf '%s\n' "$NAME" > "$PROJ/.dialogue/project"
 REG="$PROJ/.dialogue/team/registry.json"
 [ -f "$REG" ] || printf '{\n  "project": "%s",\n  "members": []\n}\n' "$NAME" > "$REG"
 
-# 2) Claude commands in the project (project name baked in, no <project> placeholder)
+# 2) Claude commands in the project (project name baked in, no <project> placeholder).
+# <dlg> -> the engine's absolute dlg. $SELF is a real path that may contain sed-special chars
+# (& = whole match, # = our delimiter, \ = escape) -- the symlink install lets it be an arbitrary
+# user clone path -- so ESCAPE it for the sed REPLACEMENT or a path like /a&b/ corrupts silently
+# and /c#d/ aborts attach. $NAME is the normalized slug -> already safe, not escaped.
 mkdir -p "$PROJ/.claude/commands"
+SELF_ESC="$(printf '%s' "$SELF" | sed 's/[&#\\]/\\&/g')"
 n=0
 for f in "$TPL"/*.md; do
-  sed "s#<project>#$NAME#g" "$f" > "$PROJ/.claude/commands/$(basename "$f")"
+  sed -e "s#<project>#$NAME#g" -e "s#<dlg>#$SELF_ESC/dialogue/dlg#g" "$f" > "$PROJ/.claude/commands/$(basename "$f")"
   n=$((n+1))
 done
 
 # 3) coordination protocol in the project (project name substituted)
 if [ -f "$SELF/templates/COORDINATION.template.md" ]; then
-  sed "s#<project>#$NAME#g" "$SELF/templates/COORDINATION.template.md" > "$PROJ/.dialogue/COORDINATION.md"
+  sed -e "s#<project>#$NAME#g" -e "s#<dlg>#$SELF_ESC/dialogue/dlg#g" "$SELF/templates/COORDINATION.template.md" > "$PROJ/.dialogue/COORDINATION.md"
 fi
 
 # 4) ALFA hooks: re-arm guards. ADDITIVE merge into .claude/settings.json -> never clobbers the

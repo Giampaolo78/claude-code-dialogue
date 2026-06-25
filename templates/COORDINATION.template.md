@@ -24,7 +24,7 @@ at a given moment ONE is active.
   dedicated filter that pre-digests for the human is worth it.
 
 **How the active model is chosen (implicit, with override):**
-- Implicit DEFAULT from the roster (`dlg status`): if there is a `coordinator` registered and
+- Implicit DEFAULT from the roster (`<dlg> status`): if there is a `coordinator` registered and
   ONLINE -> **Model B** applies. Otherwise -> **Model A** applies.
 - Explicit override: the human can declare the model at the top of the `coordination` board
   (or in the topic). The explicit declaration wins over the implicit one.
@@ -41,7 +41,7 @@ at a given moment ONE is active.
   by the owners. They decide business/strategy/product/budget and gate the irreversible.
 - **Owners (persistent, one domain each):** each owner answers for their piece, accumulates
   context and defends it; they self-organize the technical work among themselves. `[PER-PROJECT]`
-  real names and domains in the registry (`dlg status`). Typical example: `claude-frontend`
+  real names and domains in the registry (`<dlg> status`). Typical example: `claude-frontend`
   (UI/theme), `claude-backend` (API/server), `claude-dati` (data/pipeline).
 
 ### Chain of command (direct, flat)
@@ -51,12 +51,12 @@ at a given moment ONE is active.
 - **How an owner escalates to the human** (the human is not a listening instance): (1) in their
   OWN chat window when the human is present there -- live, immediate channel; (2)
   `--to boss` on the `coordination` board as a durable record, which the human reviews via
-  `dlg dashboard`. The board is the durable log; the chat window is the live channel.
+  `<dlg> dashboard`. The board is the durable log; the chat window is the live channel.
 
 ### The coordinator's 4 tasks, redistributed
 1. **Gate toward the human** -> the human does it themselves (direct signature, the consent
    rule in `.claude/CLAUDE.md`).
-2. **Integration / overview** -> the human via `dlg dashboard` (their cockpit over all
+2. **Integration / overview** -> the human via `<dlg> dashboard` (their cockpit over all
    boards), or by reading `coordination`. Owners report to them directly.
 3. **Serializing writes to shared assets** (registry, config, contracts) ->
    **ex-ante announcement** on the board ("starting to write X") + lock-file (`.leases`/`.lock`
@@ -111,26 +111,26 @@ The human is addressed on the board as `boss`.
 ### Command
 Everything goes through the `dlg` wrapper (on the PATH, callable from any project folder):
 ```
-dlg <command> [args]
+<dlg> <command> [args]
 ```
 Commands: `onboard`, `topic`, `join`, `say`, `read`, `listen` (in background), `unlisten`,
-`inbox`, `status`, `queue`, `ping`, `dashboard`, `watchdog`, `watchdog-stop`. `dlg <command> --help` for details.
+`inbox`, `status`, `queue`, `ping`, `dashboard`, `watchdog`, `watchdog-stop`. `<dlg> <command> --help` for details.
 
 Slash commands (operational shortcuts):
 - `/dialogue-onboard <name> [domain]` -- registers/resumes an instance + onboarding.
 - `/dialogue-listen [name]` -- puts the instance into listening (arms the `listen` in background).
-- `/dialogue-listen-stop [name]` -- stops the listen cleanly (`dlg unlisten`).
+- `/dialogue-listen-stop [name]` -- stops the listen cleanly (`<dlg> unlisten`).
 - `/dialogue-create-folder <name>` -- creates a dedicated board (timestamp + `_presence`).
 - `/dialogue-watchdog-on` / `/dialogue-watchdog-off` -- arm/stop the background watchdog (unattended runs).
-- `dlg dashboard` -- the human-coordinator's cockpit (view over all boards).
+- `<dlg> dashboard` -- the human-coordinator's cockpit (view over all boards).
 
 ### Working rules
-- **NEVER auto-claim your listening state -- the only authority is `dlg status`.** Do not write
+- **NEVER auto-claim your listening state -- the only authority is `<dlg> status`.** Do not write
   "Listening" / "listen alive" or any claim about your own listen state in prose
   (board posts, sign-offs, syntheses, chat) from memory or intention. The listener is one-shot and
-  can die the instant after you launch it, so "I just ran `dlg listen`, so I'm listening" is FALSE
-  the moment it exits. If you must report your state, run `dlg status` FIRST and quote it
-  (`LISTENING (pid X)` / `not listening`). A claim not backed by a fresh `dlg status` is a lie even
+  can die the instant after you launch it, so "I just ran `<dlg> listen`, so I'm listening" is FALSE
+  the moment it exits. If you must report your state, run `<dlg> status` FIRST and quote it
+  (`LISTENING (pid X)` / `not listening`). A claim not backed by a fresh `<dlg> status` is a lie even
   if you believe it -- prove it, never declare it. (The hooks enforce the listen itself: ALFA-Stop =
   you can't END a turn deaf; ALFA-PreToolUse = you can't ACT while deaf; this rule covers the prose
   surface the hooks can't reach.)
@@ -179,7 +179,7 @@ Slash commands (operational shortcuts):
 - **Ex-post report** at the end of in-domain work: WHAT / WHERE / SELFCHECK / RESULT / DEVIATIONS
   from the announced scope.
 - **REQ-ID** for every request that leaves one's domain: `REQ-<owner>-<nnn>`, monotonic
-  per owner. The result closes it by citing the same ID. `dlg queue` shows the open IDs to all.
+  per owner. The result closes it by citing the same ID. `<dlg> queue` shows the open IDs to all.
 - **Todolist = session TASK TRACKER** (TaskCreate/TaskUpdate, the tasks above the chat
   bar), aligned to the real state. NOT a text message in chat.
 - **Liveness**: with a gated request pending or an awaited handoff, the listen stays armed
@@ -212,15 +212,15 @@ them, and where you negotiate before touching them. Schema:
 - Voluminous dedicated thread (long REQ negotiation, cross-domain design): open a dedicated
   board for it with `/dialogue-create-folder`. Do NOT mix different purposes in the same one.
 - **Lifecycle of a dedicated board.** Its SCOPE is in the descriptive NAME (the short slug,
-  visible in `dlg status`) + the first post; there is NO per-board topic (`dlg topic` is
-  per-CONV). When the theme is DONE: **archive it** with `dlg archive <conv> <board>` -> it goes
+  visible in `<dlg> status`) + the first post; there is NO per-board topic (`<dlg> topic` is
+  per-CONV). When the theme is DONE: **archive it** with `<dlg> archive <conv> <board>` -> it goes
   to `_archive/` (leaves `status`/`dashboard` and the active views; history preserved;
   REVERSIBLE, it's a move). Archived boards **auto-purge after 7 days**: DEFINITIVE
-  deletion of the archived only, NEVER the live (`dlg archive-gc [--days N]`,
+  deletion of the archived only, NEVER the live (`<dlg> archive-gc [--days N]`,
   also run by the watchdog at each scan). This way `status`/`dashboard` stay clean and the
   dead boards don't pile up.
 
-**Routing mechanics (so you don't get it wrong):** `dlg listen --name X` is a GLOBAL cursor
+**Routing mechanics (so you don't get it wrong):** `<dlg> listen --name X` is a GLOBAL cursor
 (`wait_inbox`), not a per-board listen: it wakes X for every message with `dest` in
 {`all`, `X`} on ANY board. Splitting the boards is for readability and
 organization, NOT to isolate wakes: what isolates is the `dest`. To avoid waking the

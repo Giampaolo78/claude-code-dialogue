@@ -6,10 +6,10 @@ Stop THIS Claude instance's listening on the `<project>` dialogue system, CLEANL
 - Only if you really can't tell who you are, ask once for the name and stop.
 
 ## What to do (immediately, nothing else)
-1. Stop NAME's listener(s) with the AUTO-LOCATED subcommand `dlg unlisten` (clean SIGINT -> the listener's `finally` removes its lease, no zombies; + prunes the name's ALREADY-dead leases). No relative glob: paths are resolved from the wrapper's dir, not the cwd (DLG-002). Run (foreground):
+1. Stop NAME's listener(s) with the AUTO-LOCATED subcommand `<dlg> unlisten` (clean SIGINT -> the listener's `finally` removes its lease, no zombies; + prunes the name's ALREADY-dead leases). No relative glob: paths are resolved from the wrapper's dir, not the cwd (DLG-002). Run (foreground):
 
    ```
-   dlg unlisten <NAME>
+   <dlg> unlisten <NAME>
    ```
 
 2. Do NOT re-arm the listen: the listening loop ENDS here. If you have a harness background task for that listen, consider it concluded (the process has exited; ignore its completion task-notification).

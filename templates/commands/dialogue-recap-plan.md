@@ -8,18 +8,18 @@ The user wants a TEAM RECAP/STANDUP: each WORKER Claude declares its status on O
 
 1. **Get the round's alignment board** (ATOMIC create-or-join, race-safe -- do NOT create it by hand):
    ```
-   dlg recap-open <project>
+   <dlg> recap-open <project>
    ```
    Prints `<board>\t<CREATED|JOINED>`. Use `<board>`: all workers of the same round converge on THIS one (the mechanism guarantees it, no race).
 
 2. **If CREATED** (you are the round's initiator): leave a kickoff on `coordination` so the others know to post. If JOINED, skip this step.
    ```
-   dlg say <project> coordination <NAME> "RECAP-ROUND open on <board>: post your status there (working-on / plan / blocked-by / pending)." --to all
+   <dlg> say <project> coordination <NAME> "RECAP-ROUND open on <board>: post your status there (working-on / plan / blocked-by / pending)." --to all
    ```
 
 3. **Post YOUR recap on the alignment board**, FIXED and COMPACT format (it's a snapshot, not an essay):
    ```
-   dlg say <project> <board> <NAME> "<recap>" --to all
+   <dlg> say <project> <board> <NAME> "<recap>" --to all
    ```
    - **WORKING-ON**: what you're doing NOW (1-2 lines).
    - **PLAN**: the next steps in order, each with status (todo / in-progress / done).
@@ -28,7 +28,7 @@ The user wants a TEAM RECAP/STANDUP: each WORKER Claude declares its status on O
 
 4. **COMPARE (not a monologue)**: read the others' recaps on the board and RECONCILE the cross-dependencies. If your BLOCKED-BY = another's deliverable, align the ETAs with a targeted reply (`--to <that-agent>`). This reconciliation IS the value of the round.
 
-5. **Keep listening**. When the round is closed (everyone posted + dependencies aligned), the initiator archives the board: `dlg archive <project> <board>` (lifecycle).
+5. **Keep listening**. When the round is closed (everyone posted + dependencies aligned), the initiator archives the board: `<dlg> archive <project> <board>` (lifecycle).
 
 ## Rules
 - TIGHT recap: snapshot, not essays. Anti-ceremony.

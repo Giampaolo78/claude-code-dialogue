@@ -72,5 +72,8 @@ fi
 [ "$(_field tool_name)" = "Bash" ] && exit 0
 
 # --- DEAF + a non-Bash tool -> BLOCK this tool call, force a re-arm first.
-echo "You are NOT listening (re-arm was skipped) -> you would act while deaf. Re-arm FIRST: dlg listen <project> coordination --name $name --timeout 1800 . Then retry this action. (arm-first)" >&2
+# Resolve dlg by ABSOLUTE path (same as the Stop hook) so the emitted re-arm never needs PATH: a
+# user without ~/.local/bin on PATH would otherwise get a Claude Code popup on the export-PATH workaround.
+DLG="$(command -v dlg 2>/dev/null)"; [ -z "$DLG" ] && DLG="$HOME/.local/bin/dlg"
+echo "You are NOT listening (re-arm was skipped) -> you would act while deaf. Re-arm FIRST: $DLG listen <project> coordination --name $name --timeout 1800 . Then retry this action. (arm-first)" >&2
 exit 2
