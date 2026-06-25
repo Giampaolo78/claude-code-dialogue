@@ -359,20 +359,26 @@ def _checkpoint_path(name: str) -> Path:
     return cp_dir / f"{slug(name)}.json"
 
 
-def _load_cursors(name: str) -> tuple[int, int]:
+def _load_cursors(name: str) -> tuple[int, int, int]:
     """
-    Loads (delivered_us, read_us) from the checkpoint. Backward-compat: the old single
-    cursor `last_seen_us` counts as BOTH (so existing checkpoints don't break).
+    Loads (delivered_us, read_us, shown_us) from the checkpoint. Backward-compat:
+    - the old single cursor `last_seen_us` counts for delivered+read (existing checkpoints don't break);
+    - a pre-BETA checkpoint without `shown_us` initializes shown = max(read, delivered) -- exactly what
+      we KNOW the agent has seen (the listen delivered up to `delivered`, the agent read up to `read`),
+      never higher, so the first `--done` after the upgrade never over-consumes.
     """
     cp = _checkpoint_path(slug(name))
     if not cp.is_file():
-        return 0, 0
+        return 0, 0, 0
     try:
         d = json.loads(cp.read_text(encoding="utf-8"))
     except (ValueError, OSError):
-        return 0, 0
+        return 0, 0, 0
     legacy = d.get("last_seen_us", 0)
-    return d.get("delivered_us", legacy), d.get("read_us", legacy)
+    delivered = d.get("delivered_us", legacy)
+    read = d.get("read_us", legacy)
+    shown = d.get("shown_us", max(read, delivered))
+    return delivered, read, shown
 
 
 def peek(name: str, cursor: str = "read") -> tuple[list[Message], int]:
@@ -381,13 +387,17 @@ def peek(name: str, cursor: str = "read") -> tuple[list[Message], int]:
     - cursor="read" (default, INBOX path): new = not yet marked read (--done)
       -> the inbox re-shows ALL unread until you --done (the NET, no miss even if you
       look at the inbox instead of the listen output).
-    - cursor="delivered" (LISTEN path): new = not yet delivered by the listen
-      -> a re-arm does NOT re-deliver the same ones (no busy-loop), compatible with ARM-FIRST.
+    - cursor="delivered" (LISTEN path): new = micros > max(delivered, read) [fix(i)]: not yet
+      delivered AND not yet read -> a re-arm does NOT re-deliver the same ones (no busy-loop), and a
+      message handled via an inbox peek + --done is never re-delivered as noise; a sneaker (> read) IS.
     max_seen = highest micros seen across all boards (the value to advance the cursor to).
     """
     name = slug(name)
-    delivered, read = _load_cursors(name)
-    base = delivered if cursor == "delivered" else read
+    delivered, read, _shown = _load_cursors(name)
+    # fix(i): the listen path delivers micros > max(delivered, read) so an already-READ message
+    # (<= read, e.g. peek-handled then --done) is NEVER re-delivered as noise, while a sneaker
+    # (> read, not yet --done) IS re-delivered (structural re-wake). The inbox path shows micros > read.
+    base = max(delivered, read) if cursor == "delivered" else read
 
     new_msgs: list[Message] = []
     max_seen = base
@@ -409,27 +419,61 @@ def peek(name: str, cursor: str = "read") -> tuple[list[Message], int]:
 
 def commit(name: str, max_seen: int, cursor: str = "read") -> None:
     """
-    Advances a member's cursor to max_seen (forward-only, idempotent). Two-cursor:
-    - cursor="delivered": advances ONLY `delivered_us` (the listen delivered, not read).
-    - cursor="read" (default): advances `read_us` (--done) AND `delivered_us` (read => delivered).
+    Advances a member's cursor to max_seen (forward-only, idempotent). Three-cursor (BETA):
+    - cursor="delivered": advances `delivered_us` AND `shown_us` (the listen SHOWS what it delivers).
+    - cursor="shown": advances ONLY `shown_us` (an inbox peek SHOWED these without marking read).
+    - cursor="read" (default): advances `read_us` AND `shown_us`; does NOT touch `delivered`
+      (BETA: marking read must not silence the listen's re-delivery of a later sneaker -- fix(i) in
+      peek() already keeps an already-read message from being re-delivered, so the old
+      read=>delivered coupling is no longer needed).
     """
     name = slug(name)
-    delivered, read = _load_cursors(name)
+    delivered, read, shown = _load_cursors(name)
     if cursor == "delivered":
         delivered = max(delivered, max_seen)
-    else:
+        shown = max(shown, max_seen)
+    elif cursor == "shown":
+        shown = max(shown, max_seen)
+    else:  # "read"
         read = max(read, max_seen)
-        delivered = max(delivered, max_seen)
+        shown = max(shown, max_seen)
     _atomic_write(_checkpoint_path(name),
-                  json.dumps({"delivered_us": delivered, "read_us": read}))
+                  json.dumps({"delivered_us": delivered, "read_us": read, "shown_us": shown}))
+
+
+def peek_for_done(name: str) -> tuple[list[Message], int, int]:
+    """
+    For `dlg inbox --done` (BETA): returns (new_msgs, shown_old, max_seen) WITHOUT committing.
+    `shown_old` = what the agent had been SHOWN before this --done; the caller prints + flushes,
+    THEN calls commit_done (DLG-001: the cursor advances only AFTER the durable output).
+    """
+    name = slug(name)
+    _delivered, _read, shown_old = _load_cursors(name)
+    new_msgs, max_seen = peek(name, cursor="read")
+    return new_msgs, shown_old, max_seen
+
+
+def commit_done(name: str, shown_old: int, max_seen: int) -> None:
+    """
+    BETA `--done` commit: marks read up to `shown_old` (ONLY what was shown before the --done),
+    advances `shown` to `max_seen` (the --done output has now shown everything), and LEAVES
+    `delivered` intact -> the listen re-delivers any sneaker (micros > delivered) so the agent is
+    re-woken via the primary signal (structural), not only by reading the --done output.
+    """
+    name = slug(name)
+    delivered, read, shown = _load_cursors(name)
+    read = max(read, shown_old)
+    shown = max(shown, max_seen)
+    _atomic_write(_checkpoint_path(name),
+                  json.dumps({"delivered_us": delivered, "read_us": read, "shown_us": shown}))
 
 
 def inbox(name: str, update: bool = True) -> list[Message]:
     """
     UNREAD messages for a member (the `read` cursor), across ALL boards. Includes the
     broadcasts (dest=all) and those addressed to them; excludes their own. update=True: marks
-    them read (advances read+delivered) -- for IN-PROCESS callers. The CLI default is peek
-    (non-destructive) + --done.
+    them read (advances read+shown, NOT delivered -- BETA) -- for IN-PROCESS callers (peek+commit
+    back-to-back, no agent-gap, so no over-consume). The CLI default is peek (non-destructive) + --done.
     """
     new_msgs, max_seen = peek(name, cursor="read")
     if update:

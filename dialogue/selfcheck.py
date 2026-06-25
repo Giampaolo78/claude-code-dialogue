@@ -157,6 +157,55 @@ def check_gap_recovery_cursor(boards, watch) -> None:
              f"delivered in {duration:.2f}s")
 
 
+def check_done_footgun(boards) -> None:
+    """BETA inbox --done over-consume fix: a message that SNEAKS in between the agent's last view
+    and the --done is NOT consumed -- it stays unread (the --done marks only what was SHOWN), AND
+    the listener re-delivers it (delivered intact -> structural re-wake, not 'read the output')."""
+    recv = "donefoot"
+    boards.join("df", "b", recv)
+    boards.inbox(recv)  # baseline: pin the cursor past the prior checks' history
+    # msg1 arrives; the agent SEES it via a peek (dlg inbox, no --done) -> advances `shown`, not `read`
+    boards.say("df", "b", "sender", "msg1 seen via peek", dest=recv)
+    _seen, max_seen1 = boards.peek(recv)
+    boards.commit(recv, max_seen1, cursor="shown")
+    # msg2 SNEAKS in AFTER the peek, before the --done
+    boards.say("df", "b", "sender", "msg2 SNEAK", dest=recv)
+    # the agent runs --done
+    new_msgs, shown_old, max_seen2 = boards.peek_for_done(recv)
+    boards.commit_done(recv, shown_old, max_seen2)
+    # after --done: msg1 is marked read, the sneaker is STILL unread (footgun closed)
+    still_unread, _ = boards.peek(recv)
+    record("done-footgun: the sneaker survives --done (not over-consumed)",
+           len(still_unread) == 1 and "SNEAK" in still_unread[0].text,
+           f"--done saw {len(new_msgs)}, still unread {len(still_unread)}")
+    # the listener re-delivers ONLY the sneaker (delivered intact + fix(i): the read msg1 is not noise)
+    deliverable, _ = boards.peek(recv, cursor="delivered")
+    record("done-footgun: listener re-delivers the sneaker, not the read msg (fix i)",
+           len(deliverable) == 1 and "SNEAK" in deliverable[0].text,
+           f"deliverable: {len(deliverable)}")
+
+
+def check_done_migration(boards) -> None:
+    """A pre-BETA checkpoint (no shown_us) initializes shown = max(read, delivered) -> the FIRST
+    --done after the upgrade never over-consumes a message the agent has not yet seen."""
+    import json as _json
+    recv = "donemig"
+    boards.join("dm", "b", recv)
+    boards.inbox(recv)  # baseline
+    # simulate a PRE-BETA checkpoint: write {delivered_us, read_us} only (drop shown_us)
+    d, r, _s = boards._load_cursors(recv)
+    boards._atomic_write(boards._checkpoint_path(recv),
+                         _json.dumps({"delivered_us": d, "read_us": r}))
+    # a message arrives AFTER the migrated cursor; the agent has NOT seen it
+    boards.say("dm", "b", "sender", "post-migration msg, unseen", dest=recv)
+    new_msgs, shown_old, max_seen = boards.peek_for_done(recv)
+    boards.commit_done(recv, shown_old, max_seen)
+    still_unread, _ = boards.peek(recv)
+    record("done-migration: pre-BETA checkpoint -> first --done does not over-consume",
+           len(still_unread) == 1 and "post-migration" in still_unread[0].text,
+           f"still unread {len(still_unread)}")
+
+
 def check_to_guaranteed(boards, watch) -> None:
     """Point F: a --to always reaches the recipient via the cursor."""
     boards.inbox("delta")  # baseline
@@ -380,6 +429,8 @@ def main() -> int:
         check_inbox(boards)
         print("\n--- protocol v2 (2026-06-10 roundtable) ---")
         check_gap_recovery_cursor(boards, watch)
+        check_done_footgun(boards)
+        check_done_migration(boards)
         check_to_guaranteed(boards, watch)
         check_concurrent_onboards(identity)
         check_req_tracking(boards, watchdog)

@@ -260,27 +260,44 @@ def cmd_queue(args) -> int:
 
 
 def cmd_inbox(args) -> int:
-    # DEFAULT = SAFE peek: shows ALL the unread and does NOT consume. Re-runnable infinitely,
-    # always shows the same queue until you mark it read -> it is IMPOSSIBLE to miss a
-    # message. The cursor advances (marks read) ONLY with --done, and AFTER the durable output
-    # (flush+fsync, DLG-001 order: a crash between print and commit re-shows, does not lose).
-    new_msgs, max_seen = boards.peek(args.name)
+    # DEFAULT = SAFE peek: shows ALL the unread (micros > read) and does NOT mark read. Re-runnable
+    # infinitely, always the same queue until --done -> IMPOSSIBLE to miss a message.
+    # BETA --done marks read ONLY up to what was SHOWN before this --done (shown_old): a message that
+    # arrived after your last view (a "sneaker") is NOT consumed -- it stays unread AND the listener
+    # re-delivers it. The cursor advances AFTER the durable output (flush+fsync, DLG-001 order: a
+    # crash between print and commit re-shows, does not lose).
+    if args.done:
+        new_msgs, shown_old, max_seen = boards.peek_for_done(args.name)
+    else:
+        new_msgs, max_seen = boards.peek(args.name)
     if not new_msgs:
         print("Inbox empty: no unread messages for you.")
         return 0
     print(f"INBOX {boards.slug(args.name)}: {len(new_msgs)} UNREAD")
     print()
-    for msg in new_msgs:
-        _print_message(msg, with_board=True)
     if args.done:
+        marked = [m for m in new_msgs if m.micros <= shown_old]
+        fresh = [m for m in new_msgs if m.micros > shown_old]
+        for msg in marked:
+            _print_message(msg, with_board=True)
+        if fresh:
+            print(f"--- {len(fresh)} NEW since your last view (below): NOT marked read; handle "
+                  f"them -- the listener re-delivers them ---")
+            print()
+            for msg in fresh:
+                _print_message(msg, with_board=True)
         sys.stdout.flush()
         try:
             os.fsync(sys.stdout.fileno())
         except (OSError, ValueError):
             pass
-        boards.commit(args.name, max_seen)
-        print(f"(marked read: {len(new_msgs)}.)")
+        boards.commit_done(args.name, shown_old, max_seen)
+        tail = f"  ({len(fresh)} new, NOT marked.)" if fresh else ""
+        print(f"(marked read: {len(marked)}.{tail})")
     else:
+        for msg in new_msgs:
+            _print_message(msg, with_board=True)
+        boards.commit(args.name, max_seen, cursor="shown")
         print(f"(when handled, mark them read with:  dlg inbox {boards.slug(args.name)} --done)")
     return 0
 
