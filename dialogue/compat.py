@@ -25,13 +25,20 @@ IS_WINDOWS = sys.platform.startswith("win")
 # ---------------------------------------------------------------------------
 if IS_WINDOWS:
     import msvcrt
+    import time as _time
 
     def lock_exclusive(fh):
         """Blocking exclusive lock on an open file handle (locks 1 byte at 0).
-        msvcrt.LK_LOCK retries ~10s then raises -- ample for the brief registry
-        read-modify-write this guards."""
+        msvcrt.LK_LOCK gives up after ~10s with OSError; we retry so the lock BLOCKS
+        like fcntl.flock (the registry RMW it guards is brief -> contention is rare).
+        (behavior-match noted by worker2: flock blocks forever, raw LK_LOCK would raise)."""
         fh.seek(0)
-        msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+        while True:
+            try:
+                msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+                return
+            except OSError:
+                _time.sleep(0.1)
 
     def unlock(fh):
         fh.seek(0)
@@ -69,18 +76,18 @@ def pid_alive(pid) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Graceful stop of a listener/watchdog  (was: os.kill(pid, SIGINT | SIGTERM))
-# Unix: send the signal; the target's `finally` releases its lease.
-# Windows: no SIGINT/SIGTERM to an arbitrary pid -> hard terminate. BOTH callers
-# (cli.cmd_unlisten, guardian.stop) carry a lease-cleanup BELT (gc_dead_leases /
-# lease unlink), so the lease is reclaimed even though the target's own `finally`
-# does not run on a hard kill.
-# [TO VALIDATE -- worker2 anticorpo + rookie Windows-VM: confirm no lease-zombie
-#  survives a hard terminate, i.e. the belt always reclaims the lease.]
+# Stop a process  (was: os.kill(pid, SIG))
+# Unix: send `unix_sig`. Windows: hard terminate (no SIGINT/SIGTERM to a pid).
+# USED ONLY BY guardian.stop (the WATCHDOG): stop() drops the watchdog lease
+# DIRECTLY, so a hard kill that skips the target's `finally` leaves no zombie.
+# The LISTENER stop does NOT use this -> it uses a cooperative SENTINEL
+# (watch.request_stop + wait_inbox): for the listener a hard kill would skip the
+# `finally` that releases its lease, and the gc-belt races too early (gc runs
+# before the kill completes) -> lease-zombie. (anticorpo worker2)
 # ---------------------------------------------------------------------------
 def stop_pid(pid, unix_sig) -> bool:
-    """Stop process `pid`. On Unix sends `unix_sig` (SIGINT for a listener,
-    SIGTERM for the watchdog); on Windows hard-terminates. Returns True if the
+    """Stop process `pid` -- WATCHDOG only (the listener uses a cooperative sentinel).
+    On Unix sends `unix_sig` (SIGTERM); on Windows hard-terminates. Returns True if the
     stop was issued (False if pid is gone/invalid)."""
     if pid is None or pid <= 0:
         return False
