@@ -440,7 +440,8 @@ def wait_inbox(name: str, timeout: float = 600.0,
                commit: bool = True,
                manage_lease: bool = True,
                cursor: str = "read",
-               stop_uuid: str = None) -> tuple[list[boards.Message], int]:
+               stop_uuid: str = None,
+               stop_flag: list = None) -> tuple[list[boards.Message], int]:
     """
     Point E of protocol v2 (single cursor): delivers ALL unread IMMEDIATELY
     from the inbox's durable cursor (all boards, --to included: point F) and
@@ -486,6 +487,8 @@ def wait_inbox(name: str, timeout: float = 600.0,
                     boards.commit(name_s, max_seen, cursor=cursor)
                 return new_msgs, max_seen
             if stop_uuid and _stop_requested(name_s, _os.getpid(), stop_uuid):
+                if stop_flag is not None:        # tell the caller it was a STOP, not a timeout
+                    stop_flag.append(True)
                 if commit:
                     boards.commit(name_s, max_seen, cursor=cursor)
                 return [], max_seen

@@ -158,16 +158,21 @@ def cmd_listen(args) -> int:
     # 0.3: proof-of-arm. THIS python process's pid == the lease pid (pid-identity); flushed at once
     # so the /dialogue-listen template (0.4) can confirm liveness right after arming in background.
     print(f"listening as {boards.slug(args.name)} (pid {os.getpid()}, timeout {args.timeout:.0f}s)", flush=True)
+    stop_flag = []
     try:
         try:
             new_msgs, max_seen = watch.wait_inbox(args.name, timeout=args.timeout,
                                                   commit=False, manage_lease=False,
-                                                  cursor="delivered", stop_uuid=info["uuid"])
+                                                  cursor="delivered", stop_uuid=info["uuid"],
+                                                  stop_flag=stop_flag)
         except FileNotFoundError as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return 1
         if not new_msgs:
-            _print_timeout(args.timeout)
+            if stop_flag:   # stopped by `dlg unlisten` (sentinel), NOT a timeout -> no "re-arm"
+                print(f"stopped: {boards.slug(args.name)} unlistened -> clean exit (lease released). NOT re-arming.")
+            else:
+                _print_timeout(args.timeout)
             if watch.is_current_committer(args.name, info["armed_at"], info["uuid"]):
                 boards.commit(args.name, max_seen, cursor="delivered")  # niente output da proteggere
             return 0
