@@ -344,6 +344,64 @@ def check_liveness_and_alfa(boards, watch) -> None:
         os.environ["CLAUDE_CODE_SESSION_ID"] = _saved
 
 
+def check_cooperative_stop(boards, watch) -> None:
+    """Cross-platform cooperative stop: a sentinel file replaces SIGINT to the listener.
+    request_stop makes a waiting wait_inbox exit FAST via its finally (no signal, so the
+    lease is released -> no zombie), the sentinel is one-shot, and a sentinel for a
+    DIFFERENT uuid must NOT stop this listener (anti-stale on re-arm)."""
+    name = "stopper"
+    pid = os.getpid()
+    name_s = boards.slug(name)
+    # DRAIN first: the shared sandbox inbox already holds broadcasts from earlier checks; without
+    # this, wait_inbox would return them immediately (waited 0.00s) and never actually wait -> the
+    # sentinel would not be exercised. After draining, wait_inbox blocks and the stop can cut it.
+    boards.inbox(name, update=True)
+
+    # --- case 1: the listener's OWN sentinel cuts the wait fast; the finally cleans the lease ---
+    res1: dict = {}
+
+    def waiter1():
+        t0 = time.monotonic()
+        msgs, _ = watch.wait_inbox(name, timeout=10.0, stop_uuid="uuidX")
+        res1["waited"] = time.monotonic() - t0
+        res1["msgs"] = msgs
+
+    th1 = threading.Thread(target=waiter1)
+    th1.start()
+    time.sleep(0.5)  # let wait_inbox arm its observer
+    watch.request_stop(name_s, pid, "uuidX")
+    th1.join(timeout=5)
+    waited1 = res1.get("waited", 999)
+    record("cooperative-stop: own sentinel cuts the wait fast (no SIGINT)",
+             (not th1.is_alive()) and waited1 < 3.0 and res1.get("msgs") == [],
+             f"waited {waited1:.2f}s")
+    record("cooperative-stop: sentinel consumed (one-shot)",
+             not watch._stop_path(name_s, pid, "uuidX").exists(),
+             "stop-file gone after consume")
+    record("cooperative-stop: lease released on stop (no zombie)",
+             not watch._lease_path(name_s).exists(),
+             "wait_inbox lease unlinked by its finally")
+
+    # --- case 2: a sentinel for a DIFFERENT uuid must NOT stop this listener (anti-stale) ---
+    res2: dict = {}
+
+    def waiter2():
+        t0 = time.monotonic()
+        watch.wait_inbox(name, timeout=2.0, stop_uuid="uuidX")
+        res2["waited"] = time.monotonic() - t0
+
+    th2 = threading.Thread(target=waiter2)
+    th2.start()
+    time.sleep(0.5)
+    watch.request_stop(name_s, pid, "uuidY")  # foreign uuid: the uuidX listener must ignore it
+    th2.join(timeout=6)
+    waited2 = res2.get("waited", 0.0)
+    record("cooperative-stop: foreign-uuid sentinel does NOT stop (anti-stale on re-arm)",
+             (not th2.is_alive()) and waited2 >= 1.8,
+             f"waited {waited2:.2f}s (rode out the full timeout)")
+    watch._stop_path(name_s, pid, "uuidY").unlink(missing_ok=True)
+
+
 def check_req_tracking(boards, watchdog) -> None:
     """Point B: a REQ-ID minted at the source is tracked; the RESULT closes it. Pure read."""
     boards.join("v2", "req", "alfa")
@@ -436,6 +494,7 @@ def main() -> int:
         check_req_tracking(boards, watchdog)
         check_lease_multi_listen(boards, watch, watchdog)
         check_liveness_and_alfa(boards, watch)
+        check_cooperative_stop(boards, watch)
         if boards.PROTOCOL_CONVS:
             check_protocol_isolation(boards)
         else:
