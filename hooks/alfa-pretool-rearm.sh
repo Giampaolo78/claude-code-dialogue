@@ -44,22 +44,38 @@ name="$(cat "$map" 2>/dev/null)"
 
 boards="$proj/.dialogue/boards"
 
-# --- (1) is a LIVE listener lease present? pure shell; guard pid>0 (anticorpo worker2: os.kill/-0
-#         with pid<=0 has special POSIX semantics and would false-positive 'alive').
-for f in "$boards/.leases/$name".*.json; do
-    [ -e "$f" ] || continue
-    pid="$(basename "$f" | cut -d. -f2)"
-    case "$pid" in ''|*[!0-9]*) continue ;; esac
-    [ "$pid" -gt 0 ] 2>/dev/null || continue
-    if kill -0 "$pid" 2>/dev/null; then exit 0; fi   # LISTENING -> allow
-done
+# Resolve dlg by ABSOLUTE path once (the Windows liveness probe + the deaf re-arm message need it).
+DLG="$(command -v dlg 2>/dev/null)"; [ -z "$DLG" ] && DLG="$HOME/.local/bin/dlg"
+
+# --- (1) is a LIVE listener present? guard pid>0 (anticorpo worker2: os.kill/-0 with pid<=0 has
+#         special POSIX semantics and would false-positive 'alive').
+# On git-bash (Windows) `kill -0` acts on MSYS pids, NOT the native Windows pid the listener holds,
+# so it NEVER sees a live listener -> there, delegate liveness to the engine (psutil, like the Stop
+# hook). On Unix keep the fast pure-shell path (no python spawn on the common path).
+case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+        ( cd "$proj" 2>/dev/null && "$DLG" is-listening "$name" >/dev/null 2>&1 ) && exit 0   # LISTENING -> allow
+        ;;
+    *)
+        for f in "$boards/.leases/$name".*.json; do
+            [ -e "$f" ] || continue
+            pid="$(basename "$f" | cut -d. -f2)"
+            case "$pid" in ''|*[!0-9]*) continue ;; esac
+            [ "$pid" -gt 0 ] 2>/dev/null || continue
+            if kill -0 "$pid" 2>/dev/null; then exit 0; fi   # LISTENING -> allow
+        done
+        ;;
+esac
 
 # --- (2) no live lease: is this the NORMAL deliver->rearm window? (armed within GRACE seconds)
 mark="$boards/.last_arm/$name"
 if [ -f "$mark" ]; then
     now="$(date +%s 2>/dev/null)"
-    mt="$(stat -f %m "$mark" 2>/dev/null || stat -c %Y "$mark" 2>/dev/null)"
-    if [ -n "$now" ] && [ -n "$mt" ] && [ "$((now - mt))" -lt "$GRACE" ]; then exit 0; fi
+    # GNU-first: on git-bash `stat -f %m` means "file system" and dumps junk to stdout (rc1), so the
+    # old BSD-first form gave a non-numeric mt and crashed `$((now-mt))` under set -u.
+    mt="$(stat -c %Y "$mark" 2>/dev/null || stat -f %m "$mark" 2>/dev/null)"
+    case "$mt" in ''|*[!0-9]*) exit 0 ;; esac   # unparseable arm-time -> can't tell -> FAIL-OPEN
+    if [ -n "$now" ] && [ "$((now - mt))" -lt "$GRACE" ]; then exit 0; fi
 fi
 
 # --- DEAF (no live lease AND not armed within GRACE). The re-arm ('dlg listen') is itself a Bash
@@ -72,8 +88,6 @@ fi
 [ "$(_field tool_name)" = "Bash" ] && exit 0
 
 # --- DEAF + a non-Bash tool -> BLOCK this tool call, force a re-arm first.
-# Resolve dlg by ABSOLUTE path (same as the Stop hook) so the emitted re-arm never needs PATH: a
-# user without ~/.local/bin on PATH would otherwise get a Claude Code popup on the export-PATH workaround.
-DLG="$(command -v dlg 2>/dev/null)"; [ -z "$DLG" ] && DLG="$HOME/.local/bin/dlg"
+# DLG resolved above by ABSOLUTE path (same as the Stop hook) so the emitted re-arm never needs PATH.
 echo "You are NOT listening (re-arm was skipped) -> you would act while deaf. Re-arm FIRST: $DLG listen <project> coordination --name $name --timeout 1800 . Then retry this action. (arm-first)" >&2
 exit 2
