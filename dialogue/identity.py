@@ -7,7 +7,6 @@ resumes the role inherits name, mandate and board history. The registry
 collisions by design.
 """
 
-import fcntl
 import json
 import os
 import sys
@@ -16,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from . import compat
 from .boards import REPO_ROOT, slug, _atomic_write
 
 MODEL_DEFAULT = "claude-fable-5"
@@ -32,10 +32,10 @@ def _registry_lock():
     lockfile = team_root() / ".registry.lock"
     fh = open(lockfile, "w")
     try:
-        fcntl.flock(fh, fcntl.LOCK_EX)
+        compat.lock_exclusive(fh)
         yield
     finally:
-        fcntl.flock(fh, fcntl.LOCK_UN)
+        compat.unlock(fh)
         fh.close()
 
 

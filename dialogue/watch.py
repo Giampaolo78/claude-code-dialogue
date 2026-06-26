@@ -64,22 +64,16 @@ def _lease_path(name: str):
 # ---------------------------------------------------------------------------
 
 def _proc_alive(pid) -> bool:
-    import os as _os
+    # Liveness via compat.pid_alive: cross-platform (os.kill(pid,0) on Unix; psutil on
+    # Windows, where os.kill would TERMINATE the probed process). pid<=0 reads DEAD --
+    # os.kill's 0/-1 process-group semantics would false-positive, and a malformed lease
+    # (missing 'pid' -> -1) must gc, never show a phantom 'LISTENING (pid -1)'. (anticorpo worker2)
+    from . import compat
     try:
         pid = int(pid)
     except (ValueError, TypeError):
         return False
-    if pid <= 0:
-        # os.kill semantics for pid<=0 are SPECIAL (0 = caller's process group, -1 = all the user's
-        # processes, <-1 = a process group) -> all return success but NONE means "this listener is
-        # alive". A real listener pid is always > 0. A malformed lease (missing 'pid' -> -1) must read
-        # DEAD so it gets gc'd and never shows as a phantom 'LISTENING (pid -1)'. (anticorpo worker2)
-        return False
-    try:
-        _os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
+    return compat.pid_alive(pid)
 
 
 def _lease_uuid(path) -> str:

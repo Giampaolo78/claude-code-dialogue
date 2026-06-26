@@ -87,9 +87,8 @@ def watchdog_pid():
         return None
     if pid <= 0:
         return None
-    try:
-        os.kill(pid, 0)
-    except OSError:
+    from . import compat
+    if not compat.pid_alive(pid):
         try:
             p.unlink(missing_ok=True)  # stale -> prune
         except OSError:
@@ -100,12 +99,12 @@ def watchdog_pid():
 
 def stop() -> int:
     """Stop the running watchdog (SIGTERM) and drop the lease. Returns the pid stopped, 0 if none."""
-    import os
     import signal
+    from . import compat
     pid = watchdog_pid()
     if pid:
         try:
-            os.kill(pid, signal.SIGTERM)
+            compat.stop_pid(pid, signal.SIGTERM)
         except OSError:
             pass
     try:
@@ -164,6 +163,7 @@ def _lease_valid(slug: str) -> bool:
     pruned here, opportunistically.
     """
     import os
+    from . import compat
     d = boards.boards_root() / ".leases"
     if not d.is_dir():
         return False
@@ -174,8 +174,7 @@ def _lease_valid(slug: str) -> bool:
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
             expired = time.time() > data.get("expires_at", 0)
-            os.kill(int(data.get("pid", -1)), 0)
-            pid_alive = True
+            pid_alive = compat.pid_alive(int(data.get("pid", -1)))
         except (json.JSONDecodeError, OSError, ValueError, TypeError):
             expired, pid_alive = True, False
         if pid_alive and not expired:

@@ -1,1 +1,2 @@
 watchdog
+psutil; sys_platform == "win32"
