@@ -162,7 +162,7 @@ def cmd_listen(args) -> int:
         try:
             new_msgs, max_seen = watch.wait_inbox(args.name, timeout=args.timeout,
                                                   commit=False, manage_lease=False,
-                                                  cursor="delivered")
+                                                  cursor="delivered", stop_uuid=info["uuid"])
         except FileNotFoundError as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return 1
@@ -192,22 +192,17 @@ def cmd_listen(args) -> int:
 
 def cmd_unlisten(args) -> int:
     # DLG-002: CLEAN shutdown of a name's listeners, auto-located (path via
-    # boards.boards_root() = absolute, cwd-independent). SIGINT -> the listener's finally
-    # removes its lease (no zombies). Belt (reserve F6): prune the leases of ALREADY-dead pids
-    # that SIGINT does not clean up.
-    import os as _os
-    import signal as _signal
+    # boards.boards_root() = absolute, cwd-independent). Writes each live listener's STOP
+    # SENTINEL (cross-platform, replaces SIGINT): the listener loop sees it, exits NORMALLY,
+    # its finally removes the lease -> zero lease-zombie on any OS. Belt: prune ALREADY-dead leases.
     name_s = boards.slug(args.name)
     sent = 0
-    for _path, pid, _armed, _uuid in watch._iter_leases(name_s):
+    for _path, pid, _armed, uuid in watch._iter_leases(name_s):
         if watch._proc_alive(pid):
-            try:
-                _os.kill(pid, _signal.SIGINT)
-                sent += 1
-            except OSError:
-                pass
+            watch.request_stop(name_s, pid, uuid)
+            sent += 1
     pruned = watch.gc_dead_leases(name_s)
-    print(f"unlisten {name_s}: SIGINT to {sent} live listener(s); pruned {pruned} dead lease(s).")
+    print(f"unlisten {name_s}: stop-sentinel to {sent} live listener(s); pruned {pruned} dead lease(s).")
     return 0
 
 

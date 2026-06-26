@@ -113,6 +113,71 @@ def gc_dead_leases(name_s: str) -> int:
     return n
 
 
+# --- cooperative stop (cross-platform): a sentinel file replaces SIGINT to the listener.
+#     The listener loop sees its OWN sentinel (keyed name.pid.uuid) and exits the loop
+#     NORMALLY -> its finally cleans up the lease. Uniform Mac/Windows, zero lease-zombie
+#     (Windows can't SIGINT a pid; a hard kill would skip the finally). (anticorpo worker2)
+def _stop_dir():
+    d = boards.boards_root() / ".stop"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _stop_path(name_s: str, pid, uuid: str) -> Path:
+    return _stop_dir() / f"{name_s}.{pid}.{uuid}.stop"
+
+
+def request_stop(name_s: str, pid, uuid: str) -> None:
+    """Ask listener (name_s, pid, uuid) to stop: drop its sentinel. The write is an fs-event
+    in the watched root -> the listener wakes near-instant, sees it, exits via its finally."""
+    try:
+        _stop_path(name_s, pid, uuid).touch()
+    except OSError:
+        pass
+
+
+def _stop_requested(name_s: str, pid, uuid: str) -> bool:
+    """True if THIS listener's stop-sentinel exists; consumes it (one-shot)."""
+    p = _stop_path(name_s, pid, uuid)
+    if p.exists():
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return True
+    return False
+
+
+def is_stop_sentinel(name_s: str, path) -> bool:
+    """Coarse: does `path` look like ANY stop-sentinel for name_s? (handler wake; the loop
+    then verifies the exact pid+uuid)."""
+    p = Path(path)
+    return (p.parent.name == ".stop" and p.name.startswith(f"{name_s}.")
+            and p.name.endswith(".stop"))
+
+
+def gc_stop_sentinels(name_s: str) -> int:
+    """Remove stop-sentinels whose pid is dead (hygiene; per-uuid keying already stops a
+    stale sentinel from killing a freshly re-armed listener)."""
+    n = 0
+    d = boards.boards_root() / ".stop"
+    if not d.is_dir():
+        return 0
+    for p in list(d.glob(f"{name_s}.*.stop")):
+        parts = p.name.split(".")
+        try:
+            pid = int(parts[1]) if len(parts) >= 4 else -1
+        except ValueError:
+            pid = -1
+        if not _proc_alive(pid):
+            try:
+                p.unlink(missing_ok=True)
+                n += 1
+            except OSError:
+                pass
+    return n
+
+
 def _record_session_binding(name_s: str) -> None:
     """0.6 ALFA: bind THIS Claude session -> name, so the Stop-hook can resolve WHICH listener to
     check (a project can host several Claude instances). Source: CLAUDE_CODE_SESSION_ID. Atomic write
@@ -167,6 +232,7 @@ def arm_listener(name: str, timeout: float = 0.0) -> dict:
     name_s = boards.slug(name)
     (boards.boards_root() / ".leases").mkdir(parents=True, exist_ok=True)
     gc_dead_leases(name_s)
+    gc_stop_sentinels(name_s)         # hygiene: drop stop-sentinels of dead pids
     _record_session_binding(name_s)  # 0.6 ALFA: session->name for the Stop-hook
     _touch_last_arm(name_s)          # 0.7: 'armed recently' marker for the PreToolUse re-arm hook
     armed_at = _time.time()
@@ -349,6 +415,9 @@ class _RelevantHandler(FileSystemEventHandler):
 
     def _maybe_fire(self, path_str: str) -> None:
         path = Path(path_str)
+        if is_stop_sentinel(self._name, path):   # cooperative stop: my sentinel -> wake
+            self._wake.set()
+            return
         if not boards.is_message_file(path) or path.parent.name.startswith(("_", ".")):
             return
         try:
@@ -370,7 +439,8 @@ class _RelevantHandler(FileSystemEventHandler):
 def wait_inbox(name: str, timeout: float = 600.0,
                commit: bool = True,
                manage_lease: bool = True,
-               cursor: str = "read") -> tuple[list[boards.Message], int]:
+               cursor: str = "read",
+               stop_uuid: str = None) -> tuple[list[boards.Message], int]:
     """
     Point E of protocol v2 (single cursor): delivers ALL unread IMMEDIATELY
     from the inbox's durable cursor (all boards, --to included: point F) and
@@ -415,6 +485,10 @@ def wait_inbox(name: str, timeout: float = 600.0,
                 if commit:
                     boards.commit(name_s, max_seen, cursor=cursor)
                 return new_msgs, max_seen
+            if stop_uuid and _stop_requested(name_s, _os.getpid(), stop_uuid):
+                if commit:
+                    boards.commit(name_s, max_seen, cursor=cursor)
+                return [], max_seen
             wake.clear()
             remaining = deadline - time.monotonic()
             if remaining <= 0:
