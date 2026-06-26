@@ -7,6 +7,11 @@ Claude Code instances working on the same project.
 ## Prerequisites (check first)
 - **Python 3** and **git** must be available. If `python3` is missing, tell the user to install it
   (don't guess their package manager) and stop.
+- **On Windows:** run inside **git-bash** (comes with Git for Windows). The engine's shell scripts, hooks,
+  and the `dlg` / `python3` shims need a bash environment. `pip install -r requirements.txt` pulls `psutil`
+  from a prebuilt wheel (no C compiler needed). The venv uses the Windows `Scripts/` layout; the `dlg`
+  wrapper `cd`s into the engine root, so `dlg` works from anywhere — a bare `python -m dialogue.selfcheck`
+  must be run from the engine root.
 
 ## Steps
 1. **Get the engine** at the fixed home `~/.claude-code-dialogue`. If it is not there yet, clone it

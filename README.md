@@ -31,10 +31,10 @@ projects. **Opt-in:** the dialogue appears only in the projects where you run `a
 ## Requirements
 - **Python 3** (for the engine's venv) and **git**.
 - `~/.local/bin` on your `PATH` (for the `dlg` command). If it isn't, the installer tells you.
-- **Platform:** macOS and Linux natively. **Windows** via **git-bash** (Git for Windows): the engine's
-  Unix-only primitives — file locking and process signals — are abstracted in `dialogue/compat.py`
-  (`psutil`, auto-installed on Windows, backs process liveness/stop). *Windows runtime validation on a
-  real box is in progress; the exact Windows setup steps land with it.*
+- **Platform:** macOS and Linux natively. **Windows 11** via **git-bash** (Git for Windows) — validated
+  (`selfcheck` 44/44): the engine's Unix-only primitives (file locking, process signals) are abstracted in
+  `dialogue/compat.py` (`psutil`, installed on Windows from a prebuilt wheel — no compiler — backs process
+  liveness/stop). Run everything from **git-bash**; the `dlg` / `python3` shims and the hooks need it.
 
 ---
 
