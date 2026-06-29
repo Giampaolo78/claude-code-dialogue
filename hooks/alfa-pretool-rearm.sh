@@ -89,5 +89,5 @@ fi
 
 # --- DEAF + a non-Bash tool -> BLOCK this tool call, force a re-arm first.
 # DLG resolved above by ABSOLUTE path (same as the Stop hook) so the emitted re-arm never needs PATH.
-echo "You are NOT listening (re-arm was skipped) -> you would act while deaf. Re-arm FIRST: $DLG listen <project> coordination --name $name --timeout 1800 . Then retry this action. (arm-first)" >&2
+echo "You are NOT listening (re-arm was skipped) -> you would act while deaf. Re-arm FIRST via the Bash tool with run_in_background=true: $DLG listen <project> coordination --name $name --timeout 1800 -- do NOT use shell '&' (not harness-tracked -> no wake). Then retry this action. (arm-first)" >&2
 exit 2

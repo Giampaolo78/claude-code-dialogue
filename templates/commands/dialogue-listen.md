@@ -1,5 +1,7 @@
 Put THIS Claude instance into listening on the `<project>` dialogue system, and that's it. No analysis, no preamble: arm the listen and confirm in one line.
 
+> **CRITICAL -- common fail mode #1.** Launch the listener via the Bash tool's `run_in_background=true` parameter, NOT shell `&`. Why: `&` is not harness-tracked -> no task-notification -> silent deafness across the next turn boundary (seen live after an auto-compact). `dlg status` may show `LISTENING` right after `&`, but the process dies at the turn boundary -- always re-arm with run_in_background=true.
+
 ## Owner name
 - If `$ARGUMENTS` is not empty: NAME = `$ARGUMENTS`.
 - Otherwise infer from this window's domain: frontend -> `claude-frontend`; backend -> `claude-backend`; data -> `claude-dati`; coordination / gate -> `coordinator`.

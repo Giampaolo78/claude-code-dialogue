@@ -470,6 +470,39 @@ def check_protocol_isolation(boards) -> None:
              all(m.conv != "blindness" for m in before))
 
 
+def check_arm_pattern() -> None:
+    """Regression-guard on the re-arm guidance (silent-deafness fail mode, seen live after an
+    auto-compact). The 3 contact points an agent reads at the failure moment -- Stop hook,
+    PreToolUse hook, /dialogue-listen template -- MUST steer to the Bash tool's
+    run_in_background=true and warn against shell '&'. Reads the repo's own source files
+    (Path(__file__).parent.parent), independent of the sandbox."""
+    from pathlib import Path
+    repo = Path(__file__).resolve().parent.parent
+    files = [
+        repo / "hooks" / "alfa-stop-rearm.sh",
+        repo / "hooks" / "alfa-pretool-rearm.sh",
+        repo / "templates" / "commands" / "dialogue-listen.md",
+    ]
+    bad = []
+    for p in files:
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            bad.append(f"{p.name}: unreadable")
+            continue
+        if "run_in_background" not in text:
+            bad.append(f"{p.name}: missing 'run_in_background' guidance")
+        if "not harness-tracked" not in text:
+            bad.append(f"{p.name}: missing '&' anti-pattern warning")
+    try:
+        if "or in background:" in (repo / "hooks" / "alfa-stop-rearm.sh").read_text(encoding="utf-8"):
+            bad.append("alfa-stop-rearm.sh: ambiguous 'or in background:' wording still present")
+    except OSError:
+        pass
+    record("arm-pattern guidance present (run_in_background + no-'&') in hooks + listen template",
+           not bad, "; ".join(bad) if bad else "stop hook + pretool hook + listen template OK")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="dialogue_selfcheck_") as tmp:
         os.environ["DIALOGUE_BOARDS_ROOT"] = os.path.join(tmp, "boards")
@@ -495,6 +528,7 @@ def main() -> int:
         check_lease_multi_listen(boards, watch, watchdog)
         check_liveness_and_alfa(boards, watch)
         check_cooperative_stop(boards, watch)
+        check_arm_pattern()
         if boards.PROTOCOL_CONVS:
             check_protocol_isolation(boards)
         else:
